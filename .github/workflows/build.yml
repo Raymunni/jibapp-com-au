@@ -1,0 +1,73 @@
+name: Build jibapp.com.au
+
+# jibapp.com.au is the Australian copy of the Jib website. The source lives
+# in Raymunni/jib-website (public); this builds it with SITE_URL set to
+# jibapp.com.au, so canonical links, the sitemap and robots.txt use this
+# domain, and the hreflang tags tell Google to show it to Australians.
+# Runs every 30 minutes and only rebuilds when jib-website has changed.
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.cmp.outputs.changed }}
+      sha: ${{ steps.cmp.outputs.sha }}
+    steps:
+      - id: cmp
+        run: |
+          sha=$(git ls-remote https://github.com/Raymunni/jib-website.git refs/heads/main | cut -f1)
+          live=$(curl -fsS https://jibapp.com.au/build-sha.txt || true)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          if [ "$sha" = "$live" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: check
+    if: needs.check.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Raymunni/jib-website
+          ref: ${{ needs.check.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+        env:
+          SITE_URL: https://jibapp.com.au
+      - run: |
+          echo "jibapp.com.au" > dist/CNAME
+          echo "${{ needs.check.outputs.sha }}" > dist/build-sha.txt
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
