@@ -1,9 +1,9 @@
 name: Build jibapp.com.au
 
-# jibapp.com.au is the Australian copy of the Jib website. The source lives
-# in Raymunni/jib-website (public); this builds it with SITE_URL set to
-# jibapp.com.au, so canonical links, the sitemap and robots.txt use this
-# domain, and the hreflang tags tell Google to show it to Australians.
+# jibapp.com.au is the Jib website (moved from jibapp.xyz on 2026-10-07; that
+# domain now only redirects here). The source lives in Raymunni/jib-website
+# (public); this builds it with SITE_URL set to jibapp.com.au, so canonical
+# links, the sitemap and robots.txt use this domain.
 # Runs every 30 minutes and only rebuilds when jib-website has changed.
 
 on:
@@ -71,3 +71,20 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  # Tell Bing and other IndexNow engines about every page once it is live.
+  indexnow:
+    needs: [check, deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Raymunni/jib-website
+          ref: ${{ needs.check.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/indexnow.mjs
+        env:
+          INDEXNOW_HOST: jibapp.com.au
+        continue-on-error: true
